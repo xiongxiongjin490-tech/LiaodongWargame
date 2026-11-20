@@ -346,6 +346,9 @@ function cavalryMod(unit, ter){
   return 1;
 }
 function defBonus(ter){ return TERRAIN_INFO[ter].def; }
+// 残血战力衰减：满血系数 1.0，残血最低约 0.55
+function hpRatio(u){ return Math.max(0, Math.min(1, u.hp / UNIT_TYPES[u.type].hp)); }
+function hpFactor(u){ return 0.55 + 0.45 * hpRatio(u); }
 
 /* ============ 移动 / 攻击范围 ============ */
 function computeReach(u){
@@ -568,15 +571,19 @@ function attackUnit(att, def){
   if(!atWar(att.faction,def.faction)) return;
   const at=UNIT_TYPES[att.type], df=UNIT_TYPES[def.type];
   const atTer=terrainAt(att.x,att.y), defTer=terrainAt(def.x,def.y);
-  const atkPow = at.atk*(att.morale/100)*cavalryMod(att,atTer)*FACTIONS[att.faction].mod;
-  let defPow = df.def*(1+defBonus(defTer))*FACTIONS[def.faction].defMod;
+  const atkPow = at.atk*(att.morale/100)*cavalryMod(att,atTer)*hpFactor(att)*FACTIONS[att.faction].mod;
+  let defPow = df.def*(1+defBonus(defTer))*hpFactor(def)*FACTIONS[def.faction].defMod;
   if(cityAt(def.x,def.y)) defPow*=1.15;
   let dmg = Math.round(atkPow/defPow*58 + rand(9));
   dmg = Math.max(6, Math.min(60, dmg));
   def.hp -= dmg;
+  // 反击：仅当攻击者进入守军自身射程；守军即使被歼灭，也造成减半反击伤害
+  const inCounter = Math.max(Math.abs(att.x-def.x), Math.abs(att.y-def.y)) <= df.range;
   let counter = 0;
-  if(def.hp>0){
-    counter = Math.max(2, Math.round(dmg*0.70*(defPow/atkPow)*FACTIONS[def.faction].counterMod));
+  if(inCounter){
+    const slain = def.hp<=0;
+    const c = Math.round(dmg*0.70*(defPow/atkPow)*FACTIONS[def.faction].counterMod*(slain?0.5:1));
+    counter = Math.max(slain?1:2, c);
     att.hp -= counter;
   }
   att.morale = Math.max(40, Math.min(120, att.morale + (def.hp<=0?6:-2)));
