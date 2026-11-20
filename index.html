@@ -353,7 +353,8 @@ function hpFactor(u){ return 0.55 + 0.45 * hpRatio(u); }
 /* ============ 移动 / 攻击范围 ============ */
 function computeReach(u){
   const t = UNIT_TYPES[u.type];
-  const seen = new Map([[K(u.x,u.y), 0]]);
+  const visited = new Map([[K(u.x,u.y), 0]]);
+  const reach = new Map();
   const queue = [[u.x,u.y,0]];
   while(queue.length){
     const [x,y,c] = queue.shift();
@@ -362,15 +363,19 @@ function computeReach(u){
       if(!inB(nx,ny)) continue;
       const ter = terrainAt(nx,ny);
       if(ter==="w") continue;
-      if(unitAt(nx,ny)) continue;
+      const occ = unitAt(nx,ny);
+      if(occ && atWar(u.faction, occ.faction)) continue; // 交战敌军堵路；同阵营/盟友/中立不堵
       const nc = c + TERRAIN_INFO[ter].cost;
       if(nc > t.mp) continue;
       const k = K(nx,ny);
-      if(!seen.has(k) || seen.get(k) > nc){ seen.set(k,nc); queue.push([nx,ny,nc]); }
+      if(!visited.has(k) || visited.get(k) > nc){
+        visited.set(k,nc); queue.push([nx,ny,nc]);
+        if(!occ) reach.set(k,nc); // 友军格只作通道，不能停留重叠
+      }
     }
   }
-  seen.delete(K(u.x,u.y));
-  return seen;
+  reach.delete(K(u.x,u.y));
+  return reach;
 }
 function computeAttacks(u){
   const t = UNIT_TYPES[u.type];
@@ -529,6 +534,7 @@ function onTileClick(x,y){
 
 function moveUnit(u,x,y){
   if(u.acted || u.moved) return;
+  if(unitAt(x,y)) return; // 已被占据的格子不可停留
   const destCity=cityAt(x,y);
   state.history.push({
     type:"move", unitId:u.id,
